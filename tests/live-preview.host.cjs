@@ -43,7 +43,10 @@ module.exports = async function verifyLivePreview(app) {
     const img = await waitFor(() => images()[1], 'second widget');
     const second = await plugin.targets.forImage(img);
     assert.equal(second.snapshot.start, selected.snapshot.start);
-    await plugin.save(second, {width: 200});
+    const firstWrite = plugin.save(second, {width: 168});
+    const updated = (await plugin.targets.inNote(view))[1];
+    assert.equal(updated.snapshot.spec.width, 168);
+    await Promise.all([firstWrite, plugin.save(updated, {width: 200})]);
     assert.ok((await app.vault.adapter.read(note.path)).includes(raw + raw.replace('|128', '|200')));
 
     const resized = await waitFor(() => images()[1]?.getAttribute('width') === '200' && images()[1], 'updated widget');

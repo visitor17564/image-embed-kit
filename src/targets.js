@@ -19,7 +19,11 @@ function pickAt(candidates, pos, line) {
   return sameLine.length===1?sameLine[0]:null;
 }
 class Targets {
-  constructor(app) { this.app=app; this.sections=new WeakMap(); }
+  constructor(app) {
+    this.app = app;
+    this.sections = new WeakMap();
+    this.pendingSaves = new WeakMap();
+  }
   registerSection(el,ctx) {
     const section={el,ctx};
     this.sections.set(el,section);
@@ -169,10 +173,26 @@ class Targets {
     if(view.file!==file)throw Error(stale);
     return this.#rows(file,text).map(row=>this.#result(view,file,text,row));
   }
+  async #flushEditor(view, file) {
+    // MarkdownView can coalesce a save requested during an active disk write.
+    // Start the next save after the previous one settles so it reads the latest buffer.
+    const write = async () => {
+      if (view.file !== file) throw Error('노트가 전환되었습니다. 편집한 노트의 저장 상태를 확인하세요.');
+      await view.save();
+    };
+    const previous = this.pendingSaves.get(file);
+    const pending = previous ? previous.then(write, write) : write();
+    this.pendingSaves.set(file, pending);
+    try {
+      await pending;
+    } finally {
+      if (this.pendingSaves.get(file) === pending) this.pendingSaves.delete(file);
+    }
+  }
   async save(ref, changes) {
     if (ref.file.path!==ref.path || this.app.vault.getAbstractFileByPath(ref.path)!==ref.file) throw Error(stale);
     const patch=doc.edit(ref.snapshot,changes);
-    if (ref.snapshot.text.slice(patch.from,patch.to)===patch.insert) return;
+    if (ref.snapshot.text.slice(patch.from,patch.to)===patch.insert) return this.pendingSaves.get(ref.file);
     const editingView=this.#editingView(ref.file,ref.view);
     if (editingView) {
       const editor=editingView.editor;
@@ -184,7 +204,7 @@ class Targets {
       } else if (current !== doc.apply(ref.snapshot.text,ref.snapshot,patch)) {
         throw Error('편집 중 노트가 변경됐습니다. 이미지를 다시 선택하세요.');
       }
-      await editingView.save();
+      await this.#flushEditor(editingView, ref.file);
     } else {
       await this.app.vault.process(ref.file,text=>doc.apply(text,ref.snapshot,patch));
     }
