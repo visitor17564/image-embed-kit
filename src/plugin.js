@@ -1,11 +1,12 @@
 'use strict';
 const {Plugin,MarkdownView,Notice}=require('obsidian');
 const {Targets}=require('./targets.js');
-const {Overlay}=require('./overlay.js');
+const {Overlay,liveImageControls}=require('./overlay.js');
 const {Preview,Properties,Picker}=require('./modals.js');
 module.exports=class ImageEmbedKit extends Plugin {
   onload(){
     this.alive=true;this.targets=new Targets(this.app);this.overlays=new Map();this.modals=new Set();
+    this.registerEditorExtension(liveImageControls(this.targets));
     this.registerMarkdownPostProcessor((el,ctx)=>this.targets.registerSection(el,ctx));
     const attach=d=>{if(d?.body && !this.overlays.has(d))this.overlays.set(d,new Overlay(this,d));};
     this.app.workspace.onLayoutReady(()=>{

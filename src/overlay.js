@@ -1,6 +1,53 @@
 'use strict';
 const {element,button}=require('./modals.js');
 const {minWidth,maxWidth}=require('./markdown.js');
+const {ViewPlugin}=require('@codemirror/view');
+const {editorLivePreviewField}=require('obsidian');
+
+const managedImage='data-iek-live-image';
+
+// Mark only this editor's supported native image widgets. Other embeds keep
+// their own controls, including a note or a callout that contains an image.
+function liveImageControls(targets) {
+  return ViewPlugin.define(editor => {
+    const root = editor.contentDOM;
+    const mark = host => {
+      const img = host.querySelector(':scope > .image-wrapper > img, :scope > img');
+      host.toggleAttribute(managedImage, !!img && targets.accepts(img) && !!targets.viewFor(img));
+    };
+    const scan = node => {
+      if (node.nodeType !== 1) return;
+      const host = node.closest('.image-embed');
+      if (host) mark(host);
+      else for (const image of node.querySelectorAll('.image-embed')) mark(image);
+    };
+    const observer = new root.ownerDocument.defaultView.MutationObserver(records => {
+      for (const record of records) {
+        if (record.type === 'attributes') scan(record.target);
+        else for (const node of record.addedNodes) scan(node);
+      }
+    });
+    const clear = () => {
+      observer.disconnect();
+      for (const host of root.querySelectorAll('[' + managedImage + ']')) host.removeAttribute(managedImage);
+    };
+    const enable = () => {
+      observer.observe(root, {childList: true, subtree: true, attributes: true, attributeFilter: ['src']});
+      scan(root);
+    };
+    if (editor.state.field(editorLivePreviewField, false)) enable();
+    return {
+      update({state, startState}) {
+        const live = state.field(editorLivePreviewField, false);
+        if (live !== startState.field(editorLivePreviewField, false)) {
+          if (live) enable();
+          else clear();
+        }
+      },
+      destroy: clear
+    };
+  });
+}
 function normal(e) {return !e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey;}
 function stop(e) {e.preventDefault();e.stopPropagation();}
 class Overlay {
@@ -24,11 +71,14 @@ class Overlay {
     const tools=element(layer,'div','iek-tools');tools.setAttribute('role','toolbar');tools.setAttribute('aria-label','이미지 도구');
     button(tools,'확대보기','maximize-2',()=>this.img&&this.openPreview(),'iek-tool iek-open');
     button(tools,'너비와 캡션 편집','captions',()=>this.img&&this.openSettings(),'iek-tool iek-edit');
+    this.blockEdit=button(tools,'이 블럭 수정','code-2',()=>this.editBlock(),'iek-tool iek-source');
+    this.blockEdit.hidden=true;
     this.badge=element(layer,'div','iek-badge');
     const listen=(dest,type,fn,opts={})=>dest.addEventListener(type,fn,{...opts,signal:this.events.signal});
     listen(doc,'pointerover',e=>{
       if(this.drag || this.layer.contains(e.target)) {this.clearTimer();return;}
-      const img=this.match(e.target);
+      const host=e.target.closest?.('.image-embed');
+      const img=this.match(e.target.tagName==='IMG'?e.target:host?.querySelector('img'));
       if(img){this.show(img,false);return;}
       if(!this.pinned)this.later();
     },{capture:true});
@@ -69,6 +119,9 @@ class Overlay {
     if(this.img!==img) {
       this.pinned=false;this.observer.disconnect();this.img=img;this.observer.observe(img);
     }
+    const live=!!img.closest('.markdown-source-view.is-live-preview');
+    this.blockEdit.hidden=!live;
+    if(live)img.closest('.image-embed').setAttribute(managedImage,'');
     this.pinned=this.pinned||pin;this.layer.hidden=false;this.position();
   }
   schedule(){
@@ -84,7 +137,7 @@ class Overlay {
   }
   box(x,y,w,h){
     Object.assign(this.layer.style,{left:x+'px',top:y+'px',width:w+'px',height:h+'px'});
-    this.layer.classList.toggle('iek-small',w<85||h<45);
+    this.layer.classList.toggle('iek-small',w<(this.blockEdit.hidden?85:110)||h<45);
   }
   clamp(img,width){
     const content=img.closest('.cm-line, p, li') || img.closest('.markdown-preview-sizer,.cm-content');
@@ -126,6 +179,14 @@ class Overlay {
   }
   openSettings(){const i=this.img;this.hide();this.plugin.propertiesFor(i);}
   openPreview(){const i=this.img;this.hide();this.plugin.previewImage(i);}
+  editBlock() {
+    const img = this.img;
+    if (!img?.isConnected) { this.hide(); return; }
+    const native = img.closest('.image-embed').querySelector(':scope > .embed-actions > .edit-block-button');
+    this.hide();
+    if (native) native.click();
+    else this.plugin.perform(() => this.plugin.targets.editBlock(img));
+  }
   hide(){
     this.clearTimer();this.release();this.pinned=false;this.img=null;this.observer?.disconnect();
     this.layer.hidden=true;
@@ -134,4 +195,4 @@ class Overlay {
     this.hide();this.events.abort();if(this.raf)this.win.cancelAnimationFrame(this.raf);this.layer.remove();
   }
 }
-module.exports={Overlay};
+module.exports={Overlay,liveImageControls};

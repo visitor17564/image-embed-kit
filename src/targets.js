@@ -1,7 +1,7 @@
 'use strict';
 const {MarkdownView, editorLivePreviewField, parseLinktext, TFile} = require('obsidian');
-const {EditorView} = require('@codemirror/view');
 const doc = require('./markdown.js');
+const {editorFor, widgetRange, widgetEntry, imageEntries} = require('./live-images.js');
 const imageTypes = /^(?:png|apng|jpe?g|jfif|gif|webp|svg|avif|bmp|ico)$/i;
 const stale = '이미지의 노트 위치를 확인할 수 없습니다. 노트가 갱신된 뒤 다시 선택하세요.';
 
@@ -62,10 +62,48 @@ class Targets {
     const src=resourceKey(img.currentSrc||img.src);
     return !!src && src===resourceKey(this.app.vault.getResourcePath(candidate.dest));
   }
-  #openEditor(file, view) {
-    if (view?.file===file && view.getMode()==='source') return view.editor;
+  #editingView(file, view) {
+    if (view?.file===file && view.getMode()==='source') return view;
     return this.app.workspace.getLeavesOfType('markdown').map(l=>l.view)
-      .find(v=>v instanceof MarkdownView && v.file===file && v.getMode()==='source')?.editor || null;
+      .find(v=>v instanceof MarkdownView && v.file===file && v.getMode()==='source') || null;
+  }
+  #liveRows(cm, file, from, to) {
+    const rows = [];
+    for (const entry of imageEntries(cm, from, to)) {
+      const dest = this.#fileFor(entry.link, file.path);
+      if (dest) rows.push({...entry, dest});
+    }
+    return rows;
+  }
+  #fromEditor(img, view) {
+    const host = img.closest('.image-embed');
+    const cm = editorFor(host);
+    if (!cm?.state.field(editorLivePreviewField, false)) throw Error(stale);
+
+    let widget = host;
+    let range = widgetRange(cm, widget);
+    // A callout is a single CodeMirror widget containing multiple rendered elements.
+    if (range && range.from === range.to) {
+      widget = host.closest('.cm-embed-block');
+      range = widgetRange(cm, widget);
+    }
+    if (!range || range.from >= range.to) throw Error(stale);
+    const file = view.file;
+    let row;
+    if (widget === host) {
+      const entry = widgetEntry(cm, range);
+      const dest = entry && this.#fileFor(entry.link, file.path);
+      if (dest && this.#matches(img, {dest}, file.path)) row = {...entry, dest};
+    } else {
+      const rows = this.#liveRows(cm, file, range.from, range.to)
+        .filter(item => this.#matches(img, item, file.path));
+      if (!rows.length) throw Error(stale);
+      const images = Array.from(widget.querySelectorAll('.image-embed img'))
+        .filter(other => this.accepts(other) && this.#matches(other, rows[0], file.path));
+      if (images.length === rows.length) row = rows[images.indexOf(img)];
+    }
+    if (!row) throw Error(stale);
+    return this.#result(view, file, cm.state.doc.toString(), row);
   }
   #result(view,file,text,row) {
     return {view,file,path:file.path,line:row.line,imageFile:row.dest,src:this.app.vault.getResourcePath(row.dest),
@@ -75,48 +113,59 @@ class Targets {
     if (!this.accepts(img)) throw Error(stale);
     const view=this.viewFor(img), file=view?.file;
     if (!file) throw Error(stale);
-    const editor=this.#openEditor(file,view);
+    if (view.getMode()==='source') return this.#fromEditor(img,view);
+    const editor=this.#editingView(file,view)?.editor;
     const text=editor?editor.getValue():await this.app.vault.read(file);
     if (!img.isConnected || view.file!==file) throw Error(stale);
     const candidates=this.#rows(file,text).filter(row=>this.#matches(img,row,file.path));
     if (!candidates.length) throw Error(stale);
     let row;
-    if (view.getMode()==='source') {
-      // A non-editable image widget itself does not expose the owning EditorView.
-      const cmRoot=img.closest('.cm-editor');
-      const cm=cmRoot && EditorView.findFromDOM(cmRoot);
-      if (!cm || !cm.state.field(editorLivePreviewField,false)) throw Error(stale);
-      const pos=cm.posAtDOM(img.closest('.image-embed')||img);
-      row=pickAt(candidates,pos,cm.state.doc.lineAt(pos).number-1);
-    } else {
-      let section, cur=img;
-      while (cur && cur!==view.contentEl) {
-        if (this.sections.has(cur)) {section=this.sections.get(cur); break;}
-        cur=cur.parentElement;
-      }
-      if (section && section.ctx.sourcePath!==file.path) throw Error(stale);
-      const info=section && (section.ctx.getSectionInfo(img) || section.ctx.getSectionInfo(section.el));
-      if (info) {
-        const local=candidates.filter(r=>r.line>=info.lineStart && r.line<=info.lineEnd);
-        const container=section.el.contains(img)?section.el:img.closest('.el-p,.el-ul,.el-ol,.el-blockquote');
-        const siblings=container ? Array.from(container.querySelectorAll('img')).filter(other=>this.accepts(other) && this.#matches(other,candidates[0],file.path)) : [];
-        if (local.length===1 && siblings.length<=1) row=local[0];
-        else if (local.length && local.length===siblings.length) row=local[siblings.indexOf(img)];
-      }
+    let section, cur=img;
+    while (cur && cur!==view.contentEl) {
+      if (this.sections.has(cur)) {section=this.sections.get(cur); break;}
+      cur=cur.parentElement;
+    }
+    if (section && section.ctx.sourcePath!==file.path) throw Error(stale);
+    const info=section && (section.ctx.getSectionInfo(img) || section.ctx.getSectionInfo(section.el));
+    if (info) {
+      const local=candidates.filter(r=>r.line>=info.lineStart && r.line<=info.lineEnd);
+      const container=section.el.contains(img)?section.el:img.closest('.el-p,.el-ul,.el-ol,.el-blockquote');
+      const siblings=container ? Array.from(container.querySelectorAll('img')).filter(other=>this.accepts(other) && this.#matches(other,candidates[0],file.path)) : [];
+      if (local.length===1 && siblings.length<=1) row=local[0];
+      else if (local.length && local.length===siblings.length) row=local[siblings.indexOf(img)];
     }
     if (!row) throw Error('이 이미지의 위치를 확인할 수 없습니다. 명령 팔레트의 ‘노트 이미지 선택’에서 줄 번호를 선택하세요.');
     return this.#result(view,file,text,row);
   }
   atCursor(view) {
     if (!(view instanceof MarkdownView) || !view.file || view.getMode()!=='source') return null;
-    const editor=view.editor, text=editor.getValue(), cursor=editor.getCursor();
-    const row=pickAt(this.#rows(view.file,text),editor.posToOffset(cursor),cursor.line);
-    return row ? this.#result(view,view.file,text,row) : null;
+    const cm = editorFor(view.contentEl);
+    if (!cm) return null;
+    const pos = cm.state.selection.main.head;
+    const line = cm.state.doc.lineAt(pos);
+    const row = pickAt(this.#liveRows(cm, view.file, line.from, line.to), pos, line.number - 1);
+    return row ? this.#result(view, view.file, cm.state.doc.toString(), row) : null;
+  }
+  async editBlock(img) {
+    const ref = await this.forImage(img);
+    const {view, file, snapshot} = ref;
+    if (view.getMode() !== 'source' || view.file !== file || view.editor.getValue() !== snapshot.text) throw Error(stale);
+    const editor = view.editor;
+    const from = snapshot.spec.wiki ? snapshot.start + 3 : snapshot.start;
+    const to = snapshot.spec.wiki ? snapshot.start + snapshot.spec.head.length : snapshot.end;
+    editor.focus();
+    editor.setSelection(editor.offsetToPos(from), editor.offsetToPos(to));
   }
   async inNote(view) {
     const file=view.file;if(!file)return [];
-    const editor=this.#openEditor(file,view);
-    const text=editor?editor.getValue():await this.app.vault.read(file);
+    const editingView=this.#editingView(file,view);
+    if (editingView) {
+      const cm = editorFor(editingView.contentEl);
+      if (!cm) throw Error(stale);
+      const text = cm.state.doc.toString();
+      return this.#liveRows(cm, file).map(row => this.#result(view, file, text, row));
+    }
+    const text=await this.app.vault.read(file);
     if(view.file!==file)throw Error(stale);
     return this.#rows(file,text).map(row=>this.#result(view,file,text,row));
   }
@@ -124,10 +173,18 @@ class Targets {
     if (ref.file.path!==ref.path || this.app.vault.getAbstractFileByPath(ref.path)!==ref.file) throw Error(stale);
     const patch=doc.edit(ref.snapshot,changes);
     if (ref.snapshot.text.slice(patch.from,patch.to)===patch.insert) return;
-    const editor=this.#openEditor(ref.file,ref.view);
-    if (editor) {
-      doc.apply(editor.getValue(),ref.snapshot,patch); // guard against a stale dialog or drag
-      editor.replaceRange(patch.insert,editor.offsetToPos(patch.from),editor.offsetToPos(patch.to));
+    const editingView=this.#editingView(ref.file,ref.view);
+    if (editingView) {
+      const editor=editingView.editor;
+      const current=editor.getValue();
+      // A previous write may have updated the editor before a disk save failed.
+      // A retry of the same action may save that exact result without inserting it twice.
+      if (current === ref.snapshot.text) {
+        editor.replaceRange(patch.insert,editor.offsetToPos(patch.from),editor.offsetToPos(patch.to));
+      } else if (current !== doc.apply(ref.snapshot.text,ref.snapshot,patch)) {
+        throw Error('편집 중 노트가 변경됐습니다. 이미지를 다시 선택하세요.');
+      }
+      await editingView.save();
     } else {
       await this.app.vault.process(ref.file,text=>doc.apply(text,ref.snapshot,patch));
     }

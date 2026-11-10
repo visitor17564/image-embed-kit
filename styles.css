@@ -3,6 +3,11 @@
   pointer-events: none; user-select: none;
 }
 .iek-layer[hidden] { display: none !important; }
+.iek-layer .iek-tools button[hidden],
+.markdown-source-view.is-live-preview [data-iek-live-image] > .embed-actions,
+.markdown-source-view.is-live-preview [data-iek-live-image] > .image-wrapper > .image-resize-corner {
+  display: none !important;
+}
 .iek-outline { position: absolute; inset: 0; border: 1px solid var(--interactive-accent); border-radius: 3px; opacity: .82; }
 .iek-layer button.iek-grip {
   position: absolute; top: 50%; transform: translateY(-50%); z-index: 3;

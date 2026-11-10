@@ -1,7 +1,7 @@
 'use strict';
 
-// Obsidian's metadata identifies the occurrence. Only touch the width in the label
-// and the immediately adjacent caption that this plugin owns.
+// Only change the selected embed's width and the immediately adjacent caption
+// that this plugin owns.
 const captionMark = '<!--iek-caption-->';
 const hiddenMark = '<!--iek-caption-hidden:';
 const gap = '(?:[ \\t]+|[ \\t]*(?:\\r?\\n){1,2}[ \\t]*)';

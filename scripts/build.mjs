@@ -6,7 +6,7 @@ await build({
   format: 'cjs',
   platform: 'browser',
   target: 'es2021',
-  external: ['obsidian', '@codemirror/view'],
+  external: ['obsidian', '@codemirror/view', '@codemirror/language'],
   outfile: 'main.js',
   minify: true,
   legalComments: 'none'
