@@ -33,3 +33,5 @@ npm run build
 ```
 
 빌드 시 esbuild만 사용합니다. 실행 시 Obsidian이 제공하는 API와 CodeMirror를 사용합니다.
+
+[MIT 라이선스](./LICENSE)
