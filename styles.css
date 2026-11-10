@@ -1,0 +1,60 @@
+.iek-layer {
+  position: fixed; z-index: var(--layer-popover, 30); box-sizing: border-box;
+  pointer-events: none; user-select: none;
+}
+.iek-layer[hidden] { display: none !important; }
+.iek-outline { position: absolute; inset: 0; border: 1px solid var(--interactive-accent); border-radius: 3px; opacity: .82; }
+.iek-layer button.iek-grip {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 3;
+  width: 18px; height: min(64px, 100%); padding: 0; border: 0; box-shadow: none;
+  background: transparent; pointer-events: auto; cursor: ew-resize; touch-action: none;
+}
+.iek-grip::after {
+  content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 5px; height: min(32px, 70%); border-radius: 4px; background: var(--interactive-accent);
+  box-shadow: 0 0 0 1px var(--background-primary), 0 1px 4px #0004;
+}
+.iek-grip.iek-left { left: -9px; } .iek-grip.iek-right { right: -9px; }
+.iek-tools {
+  position: absolute; right: 5px; top: 5px; display: flex; align-items: center; gap: 2px;
+  z-index: 3; pointer-events: auto; padding: 2px; border-radius: 7px;
+  background: var(--background-primary); border: 1px solid var(--background-modifier-border);
+  box-shadow: 0 2px 8px #0002;
+}
+.iek-small .iek-tools { top: auto; bottom: calc(100% + 2px); right: 0; }
+.iek-layer button.iek-tool {
+  display: grid; place-items: center; width: 28px; height: 25px; background: transparent; padding: 0;
+  border: 0; box-shadow: none; color: var(--text-muted); cursor: pointer;
+}
+.iek-layer .iek-tool:hover, .iek-layer .iek-tool:focus-visible { background: var(--background-modifier-hover); color: var(--text-normal); }
+.iek-tool svg { width: 16px; height: 16px; }
+.iek-origin { visibility: hidden !important; }
+.iek-ghost { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; object-fit: contain; pointer-events: none; }
+.iek-badge { display: none; }
+.iek-dragging .iek-badge {
+  position: absolute; display: block; z-index: 4; bottom: 4px; left: 50%; transform: translateX(-50%);
+  color: white; background: #262930dc; padding: 2px 8px; font-size: 12px; border-radius: 8px; white-space: nowrap;
+}
+.iek-dragging .iek-tools { display: none; }
+.iek-properties { width: min(425px, 92vw); }
+.iek-filename,.iek-help,.iek-info { color: var(--text-muted); font-size: var(--font-ui-small); overflow-wrap: anywhere; }
+.iek-form { display: grid; gap: 16px; margin-top: 20px; }
+.iek-field { display: grid; gap: 5px; }
+.iek-field-title { font-weight: 600; }
+.iek-form input.iek-width { width: 10em; } .iek-form input.iek-caption-input { width: 100%; }
+.iek-hide-row,.iek-form-bar,.iek-preview-controls,.iek-preview-bar { display: flex; gap: 8px; align-items: center; }
+.iek-form-bar { justify-content: flex-end; }
+.iek-form-bar > :first-child { margin-inline-end: auto; }
+.iek-error { color: var(--text-error); font-size: var(--font-ui-small); }
+.iek-error:empty { display: none; }
+.modal.iek-preview { width: min(94vw, 1520px); max-width: 96vw; max-height: 94vh; }
+.iek-preview .modal-content { overflow: hidden; }
+.iek-stage {
+  display: flex; height: min(68vh, 900px); min-height: 100px; max-height: calc(94vh - 120px);
+  overflow: auto; overscroll-behavior: contain; border-radius: 8px; background: var(--background-secondary);
+}
+.iek-stage .iek-full-image { flex: none; align-self: flex-start; margin: auto; max-width: none; max-height: none; height: auto; object-fit: contain; }
+.iek-preview-bar { margin-top: 10px; justify-content: space-between; flex-wrap: wrap; }
+.iek-preview-controls { gap: 4px; } .iek-preview-controls button { cursor: pointer; }
+.iek-picker-title { font-weight: 550; }
+@media print { .iek-layer { display: none !important; } }
