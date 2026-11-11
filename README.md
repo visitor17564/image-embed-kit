@@ -20,12 +20,13 @@ Embed a vault image in a note, for example `![[photo.png]]`. In **Reading view**
 - **Add a caption** in the same dialog and choose **저장** (Save). You can hide a caption and restore it later, or clear the text to remove it.
 - **Zoom** by double-clicking the image or using the expand button (확대보기). The viewer shows the original dimensions and offers zoom, 100%, and fit to screen. Press Esc or click the backdrop to close it.
 - **Edit the embed link** in Live Preview with the code button (이 블럭 수정). For keyboard access, use the command palette and choose **Image Embed Kit: 노트 이미지 선택** to find an image by file name, caption, or line number.
-- **Remove an image from the note** by clicking it once and pressing **Delete** in Reading view or Live Preview. This removes that embed and its plugin caption. The attachment and other embeds of the same file stay available.
+- **Right-click an image** in Reading view or Live Preview to open its image and file actions. In Reading view, choose **Remove image** to remove just the selected embed and keep the attachment.
+- **Delete the image file** by choosing **Delete image** or by clicking the image once and pressing **Delete** in either view. Both use Obsidian’s file deletion settings, including the confirmation prompt and trash location. Deleting the file removes the selected embed. Captions remain as note text, and other links to the file will point to a missing attachment.
 - **Write below an image** in Live Preview by clicking it and pressing **Enter**. The cursor moves to a new line below the image and its caption. For an inline image, the new line starts below the current line of text.
 
 ### Supported images
 
-Both wiki embeds such as `![[photo.png|320]]` and Markdown embeds such as `![Garden|320](photo.png "Spring")` are supported. Width is stored in the link. A visible caption is stored as italic Markdown next to the embed, so it stays readable when the plugin is disabled. Alt text and link titles are preserved.
+Both wiki embeds such as `![[photo.png|320]]` and Markdown embeds such as `![Garden|320](photo.png "Spring")` are supported. Width is stored in the link. A visible caption is stored as italic Markdown next to the embed, so it stays readable when the plugin is disabled. Editing the width or caption preserves alt text and link titles.
 
 The toolbar works on local images in the body of a note. Remote URLs, table cells, images inside embedded notes, and mouse controls in Source mode are outside its scope.
 

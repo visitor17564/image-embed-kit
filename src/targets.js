@@ -23,6 +23,7 @@ class Targets {
     this.app = app;
     this.sections = new WeakMap();
     this.pendingSaves = new WeakMap();
+    this.deleting = new WeakSet();
   }
   registerSection(el,ctx) {
     const section={el,ctx};
@@ -43,7 +44,7 @@ class Targets {
   #fileFor(link, path) {
     if (!link || /^(?:[a-z][\w+.-]*:|\/\/)/i.test(link)) return null;
     const t=this.app.metadataCache.getFirstLinkpathDest(parseLinktext(link).path,path);
-    return t instanceof TFile && imageTypes.test(t.extension) ? t:null;
+    return isImageFile(t) ? t:null;
   }
   #rows(file,text) {
     const starts=doc.lineStarts(text), cache=this.app.metadataCache.getFileCache(file);
@@ -110,7 +111,7 @@ class Targets {
     return this.#result(view, file, cm.state.doc.toString(), row);
   }
   #result(view,file,text,row) {
-    return {view,file,path:file.path,line:row.line,imageFile:row.dest,src:this.app.vault.getResourcePath(row.dest),
+    return {view,file,path:file.path,line:row.line,imageFile:row.dest,imagePath:row.dest.path,src:this.app.vault.getResourcePath(row.dest),
       snapshot:doc.snapshot(text,row.start,row.raw)};
   }
   async forImage(img) {
@@ -193,13 +194,58 @@ class Targets {
     return this.#write(ref, doc.edit(ref.snapshot, changes));
   }
 
+  removeFromNote(ref) {
+    return this.#write(ref, doc.removeEmbed(ref.snapshot));
+  }
+
+  replaceImage(ref, file) {
+    if (!isImageFile(file) || this.app.vault.getAbstractFileByPath(file.path) !== file) throw Error(stale);
+    const {snapshot} = ref;
+    const alias = snapshot.spec.wiki ? snapshot.raw.slice(snapshot.spec.head.length, -2).slice(1) :
+      snapshot.raw.slice(2, -snapshot.spec.tail.length);
+    const link = this.app.fileManager.generateMarkdownLink(file, ref.path, undefined, alias || undefined);
+    return this.#write(ref, {from:snapshot.start, to:snapshot.end, insert:link.startsWith('!') ? link : '!' + link});
+  }
+
+  async deleteImage(ref) {
+    const {view, file, imageFile, snapshot} = ref, vault = this.app.vault;
+    if (this.deleting.has(imageFile)) return;
+    this.deleting.add(imageFile);
+    try {
+      const editor = this.#editingView(file, view)?.editor;
+      const current = editor ? editor.getValue() : await vault.read(file);
+      if (current !== snapshot.text || view.file !== file || !view.contentEl.isConnected ||
+          vault.getAbstractFileByPath(ref.path) !== file || vault.getAbstractFileByPath(ref.imagePath) !== imageFile)
+        throw Error(stale);
+
+      // This API performs deletion itself and observes the vault's confirmation and trash settings.
+      if (!await this.app.fileManager.promptForDeletion(imageFile)) return;
+      if (vault.getAbstractFileByPath(ref.path) !== file)
+        throw Error('이미지 파일은 삭제됐습니다. 원래 노트가 이동되거나 삭제되어 링크의 위치를 확인해 주세요.');
+      const editing = this.#editingView(file, view);
+      if (editing) {
+        const text = editing.editor.getValue(), patch = doc.afterFileDeletion(snapshot, text);
+        if (patch) {
+          const focus = editing === view && this.app.workspace.activeLeaf === view.leaf;
+          await this.#write({...ref, snapshot:{...snapshot, text}}, patch, focus);
+        }
+      } else {
+        await vault.process(file, text => {
+          const patch = doc.afterFileDeletion(snapshot, text);
+          return patch ? text.slice(0, patch.from) + text.slice(patch.to) : text;
+        });
+      }
+    } finally {
+      this.deleting.delete(imageFile);
+    }
+  }
+
   async applySelectionKey(ref, key) {
     const {view, file, snapshot} = ref;
     if (view.file !== file || !view.contentEl.isConnected) throw Error(stale);
+    if (key === 'Delete') return this.deleteImage(ref);
     const live = view.getMode() === 'source' && editorFor(view.contentEl)?.state.field(editorLivePreviewField, false);
-    if (key !== 'Delete' && (key !== 'Enter' || !live)) return;
-    const patch = key === 'Enter' ? doc.lineBelow(snapshot) : doc.removeEmbed(snapshot);
-    await this.#write(ref, patch, live);
+    if (key === 'Enter' && live) await this.#write(ref, doc.lineBelow(snapshot), true);
   }
 
   async #write(ref, patch, focusEditor = false) {
@@ -231,4 +277,7 @@ class Targets {
     }
   }
 }
-module.exports={Targets};
+function isImageFile(file) {
+  return file instanceof TFile && imageTypes.test(file.extension);
+}
+module.exports={Targets,isImageFile};

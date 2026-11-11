@@ -49,13 +49,26 @@ test('Obsidian line/col works with astral Unicode and CRLF',()=>{
   assert.equal(m.offset(starts,{line:1,col:3}),text.indexOf('!'));
 });
 
-test('Delete removes only the selected embed and its owned visible or hidden caption', () => {
+test('Removing an embed preserves adjacent visible, hidden, and handwritten captions', () => {
   const raw = '![Map|120](map.png "First edition")';
   for (const caption of ['\n\n*second* <!--iek-caption-->', ' <!--iek-caption-hidden:second-->']) {
     const text = raw + ' and ' + raw + caption + '\n\n*handwritten caption*';
     const ref = m.snapshot(text, text.lastIndexOf(raw), raw);
-    assert.equal(m.apply(text, ref, m.removeEmbed(ref)), raw + ' and \n\n*handwritten caption*');
+    assert.equal(m.apply(text, ref, m.removeEmbed(ref)), raw + ' and ' + caption + '\n\n*handwritten caption*');
     assert.throws(() => m.apply('different ' + text, ref, m.removeEmbed(ref)), /노트가 변경/);
+  }
+});
+
+test('A confirmed file deletion follows the selected occurrence across edits outside it', () => {
+  const raw = '![[same.png|100]]', text = raw + ' / ' + raw + ' end';
+  const s = m.snapshot(text, text.lastIndexOf(raw), raw);
+  for (const current of [text, 'new ' + text, text + ' more']) {
+    const patch = m.afterFileDeletion(s, current);
+    assert.equal(current.slice(0, patch.from) + current.slice(patch.to), current.replace(' / ' + raw, ' / '));
+  }
+  assert.equal(m.afterFileDeletion(s, raw + ' /  end'), null);
+  for (const changed of [raw + ' / ' + raw + ' / ' + raw + ' end', 'new ' + text + ' more', 'other']) {
+    assert.throws(() => m.afterFileDeletion(s, changed), /링크의 위치/);
   }
 });
 

@@ -98,7 +98,23 @@ function apply(text, s, change) {
 }
 
 function removeEmbed(s) {
-  return {from: s.start, to: s.end + s.caption.raw.length, insert: ''};
+  return {from: s.start, to: s.end, insert: ''};
+}
+
+// During the native confirmation another pane can edit the same note.
+// Trust a surviving boundary only when no identical embed was added or lost.
+function afterFileDeletion(s, text) {
+  if (text === s.text) return removeEmbed(s);
+  const before = s.text.slice(0, s.start), after = s.text.slice(s.end);
+  if (text === before + after) return null;
+  const left = text.startsWith(before + s.raw) ? s.start : -1;
+  const right = text.endsWith(s.raw + after) ? text.length - after.length - s.raw.length : -1;
+  if ((left < 0 && right < 0) || (left >= 0 && right >= 0 && left !== right) ||
+      text.split(s.raw).length !== s.text.split(s.raw).length) {
+    throw Error('이미지 파일은 삭제됐습니다. 노트가 변경되어 선택한 이미지 링크의 위치를 다시 확인해 주세요.');
+  }
+  const from = left >= 0 ? left : right;
+  return {from, to: from + s.raw.length, insert: ''};
 }
 
 function lineBelow(s) {
@@ -115,4 +131,4 @@ function lineBelow(s) {
   return {from: at, to: at, insert: eol + indent};
 }
 
-module.exports={parse,withWidth,snapshot,edit,apply,removeEmbed,lineBelow,lineStarts,offset,minWidth,maxWidth,maxCaption};
+module.exports={parse,withWidth,snapshot,edit,apply,removeEmbed,afterFileDeletion,lineBelow,lineStarts,offset,minWidth,maxWidth,maxCaption};

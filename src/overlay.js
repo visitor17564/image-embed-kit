@@ -3,6 +3,7 @@ const {element,button}=require('./modals.js');
 const {minWidth,maxWidth}=require('./markdown.js');
 const {ViewPlugin}=require('@codemirror/view');
 const {editorLivePreviewField}=require('obsidian');
+const {readingMenu}=require('./image-menu.js');
 
 const managedImage='data-iek-live-image';
 
@@ -53,6 +54,7 @@ function stop(e) {e.preventDefault();e.stopPropagation();}
 class Overlay {
   constructor(plugin,doc) {
     this.plugin=plugin;this.doc=doc;this.win=doc.defaultView;this.events=new this.win.AbortController();
+    this.menuRequest=0;
     const layer=this.layer=element(doc.body,'div','iek-layer');layer.hidden=true;
     layer.tabIndex = -1;
     layer.setAttribute('role', 'group');
@@ -87,10 +89,30 @@ class Overlay {
       if(!this.pinned)this.later();
     },{capture:true});
     listen(doc,'pointerdown',e=>{
+      this.menuRequest++;
       if(this.layer.contains(e.target)||this.drag)return;
+      if (e.button === 2 && this.readingImage(e.target)) { this.hide(); e.stopPropagation(); return; }
       const img=this.match(e.target);
       if(!img || !normal(e) || e.button!==0){this.hide();return;}
       this.select(img);stop(e);
+    },{capture:true});
+    listen(doc,'mousedown',e=>{
+      if (e.button === 2 && this.readingImage(e.target)) stop(e);
+    },{capture:true});
+    listen(doc,'contextmenu',e=>{
+      const img = this.readingImage(e.target);
+      if (!img) return;
+      stop(e);
+      this.menu?.hide();
+      this.hide();
+      const request = ++this.menuRequest;
+      this.plugin.perform(async () => {
+        const ref = await this.plugin.targets.forImage(img);
+        if (request !== this.menuRequest || !this.plugin.alive || !img.isConnected || ref.view.getMode() !== 'preview') return;
+        const menu = this.menu = readingMenu(this.plugin, ref, this.win);
+        menu.onHide(() => { if (this.menu === menu) this.menu = null; });
+        menu.showAtMouseEvent(e);
+      });
     },{capture:true});
     listen(doc,'click',e=>{
       if(e.button===0 && normal(e) && this.match(e.target)){
@@ -110,13 +132,19 @@ class Overlay {
     listen(layer,'focusout',e=>{if (this.selection && !layer.contains(e.relatedTarget)) this.hide();});
     listen(doc,'scroll',()=>this.schedule(),{capture:true,passive:true});
     listen(this.win,'resize',()=>this.schedule());
-    listen(this.win,'blur',()=>{this.heldKey = null;this.hide();});
+    listen(this.win,'blur',()=>{this.menuRequest++;this.heldKey = null;this.hide();});
     this.observer=new this.win.ResizeObserver(()=>this.schedule());
   }
   match(node) {
     if(!this.plugin.targets.accepts(node))return null;
     if(node===this.img && node.isConnected)return node;
     return this.plugin.targets.viewFor(node) ? node:null;
+  }
+  readingImage(node) {
+    if (!node.closest?.('.markdown-preview-view')) return null;
+    const img = node.tagName === 'IMG' ? node :
+      (node.matches('.image-wrapper, .image-embed') ? node.querySelector('img') : null);
+    return this.plugin.targets.accepts(img) && this.plugin.targets.viewFor(img)?.getMode() === 'preview' ? img : null;
   }
   clearTimer(){if(this.timer){this.win.clearTimeout(this.timer);this.timer=0;}}
   later(){this.clearTimer();this.timer=this.win.setTimeout(()=>{if(!this.pinned&&!this.layer.contains(this.doc.activeElement))this.hide();},180);}
@@ -225,6 +253,7 @@ class Overlay {
     this.layer.hidden=true;
   }
   destroy(){
+    this.menuRequest++;this.menu?.hide();
     this.hide();this.events.abort();if(this.raf)this.win.cancelAnimationFrame(this.raf);this.layer.remove();
   }
 }

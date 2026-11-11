@@ -63,12 +63,28 @@ module.exports = async function verifyImageKeys(app, {wc} = {}) {
     wc.sendInputEvent({type:'keyUp',keyCode:key});
   };
 
+  const createAsset = async () => {
+    const file = await app.vault.create(assetName, '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160"><rect width="240" height="160" fill="blue"/></svg>');
+    files.push(file);
+    return file;
+  };
+  const answer = async confirm => {
+    const modal = await until(() => document.querySelector('.modal .modal-button-container button:is(.mod-warning,.mod-destructive)')?.closest('.modal'), 'Obsidian delete dialog');
+    assert.ok(modal.textContent.includes(assetName));
+    const button = confirm ? modal.querySelector('button:is(.mod-warning,.mod-destructive)') :
+      Array.from(modal.querySelectorAll('button')).find(b => /취소|cancel/i.test(b.textContent));
+    assert.ok(button);
+    button.click();
+    await until(() => !document.querySelector('.modal'), 'delete dialog closed');
+  };
+
   try {
-    const attachment = await app.vault.create(assetName, '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160"><rect width="240" height="160" fill="blue"/></svg>');
-    files.push(attachment);
+    assert.equal(app.vault.getConfig('trashOption'), 'local', 'requires a disposable vault with local trash');
+    assert.notEqual(app.vault.getConfig('promptDelete'), false);
+    let attachment = await createAsset();
     const caption = ' *second* <!--iek-caption-->';
     const two = '# Test\n\n' + raw + ' / ' + raw + caption + '\n\n*my own paragraph*';
-    const removed = two.replace(' / ' + raw + caption, ' / ');
+    const removed = two.replace(' / ' + raw, ' / ');
     const reading = await open('reading', two, 'preview');
     await until(() => reading.images().length === 2, 'two reading images');
     reading.images()[1].dispatchEvent(new win.PointerEvent('pointerover', {bubbles:true}));
@@ -80,19 +96,31 @@ module.exports = async function verifyImageKeys(app, {wc} = {}) {
     assert.equal(dispatchKey(layer,'Delete',{isComposing:true}).defaultPrevented,false);
     reading.images()[0].dispatchEvent(new win.PointerEvent('pointerover',{bubbles:true}));
     press('Delete');
+    await answer(false);
+    assert.equal(app.vault.getAbstractFileByPath(assetName),attachment);
+    assert.equal(await reading.read(),two);
+    await select(reading.images()[1]);
+    press('Delete');
+    await answer(true);
     await until(async () => await reading.read() === removed, 'reading removes clicked copy');
     assert.equal(leaf.view.getMode(),'preview');
-    assert.equal(app.vault.getAbstractFileByPath(assetName),attachment);
+    assert.equal(app.vault.getAbstractFileByPath(assetName),null);
+    assert.equal(await app.vault.adapter.exists('.trash/' + assetName),true);
 
+    await createAsset();
     const edit = await open('editing', two, 'source');
     await until(() => edit.images().length === 2, 'two live images');
     await select(edit.images()[1]);
     press('Delete');
+    await answer(true);
     await until(async () => await edit.read() === removed, 'live delete saved');
+    assert.equal(app.vault.getAbstractFileByPath(assetName),null);
     assert.equal(hasEditorFocus(),true);
     edit.editor.undo();
-    await until(() => edit.editor.getValue() === two, 'native undo restores embed and caption');
+    await until(() => edit.editor.getValue() === two, 'editor undo restores embed text');
+    assert.equal(app.vault.getAbstractFileByPath(assetName),null);
 
+    attachment = await createAsset();
     const capLine = '*caption* <!--iek-caption-->';
     const before = '# Enter\n\n' + raw + '\n\n' + capLine + '\nFollowing paragraph';
     const newline = await open('enter', before, 'source');
@@ -120,9 +148,12 @@ module.exports = async function verifyImageKeys(app, {wc} = {}) {
     dispatchKey(layer,'Delete');
     await until(async () => await stale.read() === 'updated ' + two, 'concurrent edit saved without removing another embed');
     assert.equal(stale.editor.getValue(),'updated ' + two);
-    return {input:wc ? 'electron' : 'DOM', readingDelete:true, liveDeleteUndo:true, enterType:true, enterAtEnd:true, stale:true};
+    assert.equal(document.querySelector('.modal'),null);
+    assert.equal(app.vault.getAbstractFileByPath(assetName),attachment);
+    return {input:wc ? 'electron' : 'DOM', readingDelete:true, cancel:true, trash:true, liveDeleteUndo:true, enterType:true, enterAtEnd:true, stale:true};
   } finally {
     leaf.detach();
-    for (const file of files.reverse()) await app.vault.delete(file);
+    for (const file of files.reverse())
+      if (app.vault.getAbstractFileByPath(file.path) === file) await app.vault.delete(file);
   }
 };
