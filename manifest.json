@@ -1,7 +1,7 @@
 {
   "id": "image-embed-kit",
   "name": "Image Embed Kit",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "minAppVersion": "1.12.4",
   "description": "Resize embedded images with side handles, zoom in, and save captions in your notes.",
   "author": "visitor17564",

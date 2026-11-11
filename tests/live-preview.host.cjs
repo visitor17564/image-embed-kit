@@ -55,11 +55,33 @@ module.exports = async function verifyLivePreview(app) {
     resized.dispatchEvent(new window.PointerEvent('pointerover', {bubbles: true}));
     const tools = document.querySelector('.iek-layer:not([hidden]) .iek-tools');
     assert.ok(tools);
-    const native = resized.closest('.image-embed').querySelector(':scope > .embed-actions');
-    if (native) assert.equal(window.getComputedStyle(native).display, 'none');
+    const display = el => window.getComputedStyle(el).display;
+    const visibleTools = bar => Array.from(bar.querySelectorAll('button')).filter(el => display(el) !== 'none').length;
+    assert.equal(visibleTools(tools), 3);
+    const host = resized.closest('.image-embed');
+    for (const native of host.querySelectorAll(':scope > .embed-actions, :scope > .image-wrapper > .image-resize-corner')) {
+      assert.equal(display(native), 'none');
+    }
+
+    const layer = tools.closest('.iek-layer');
+    const pointer = {bubbles: true, pointerId: 7, button: 0};
+    layer.querySelector('.iek-right').dispatchEvent(new window.PointerEvent('pointerdown', pointer));
+    assert.equal(window.getComputedStyle(resized).visibility, 'hidden');
+    assert.ok(layer.querySelector('.iek-ghost'));
+    document.dispatchEvent(new window.PointerEvent('pointercancel', pointer));
+    assert.notEqual(window.getComputedStyle(resized).visibility, 'hidden');
+    assert.equal(display(layer), 'none');
+    resized.dispatchEvent(new window.PointerEvent('pointerover', {bubbles: true}));
     tools.querySelector('.iek-source').click();
     await waitFor(() => editor.getSelection() === name + '.svg', 'edit original link');
     assert.equal(editor.getCursor('from').ch, raw.length + 3);
+
+    await leaf.setViewState({type: 'markdown', state: {file: note.path, mode: 'preview'}, active: true});
+    const readingImage = await waitFor(() => leaf.view.contentEl.querySelector('.markdown-preview-view .image-embed img'), 'reading image');
+    readingImage.dispatchEvent(new window.PointerEvent('pointerover', {bubbles: true}));
+    assert.notEqual(display(layer), 'none');
+    assert.equal(visibleTools(tools), 2);
+    assert.equal(display(tools.querySelector('.iek-source')), 'none');
   } finally {
     leaf.detach();
     for (const file of created.reverse()) await app.vault.delete(file);
