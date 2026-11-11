@@ -1,5 +1,7 @@
 # Image Embed Kit
 
+![Image Embed Kit로 노트에 삽입한 이미지를 편집하는 모습](assets/image-tool-test.gif)
+
 Obsidian 데스크톱 노트에 삽입한 이미지의 표시 크기를 조절하고 캡션을 붙이는 플러그인입니다. 원본 사진은 다시 저장하지 않습니다.
 
 ## 사용법
