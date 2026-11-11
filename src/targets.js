@@ -190,8 +190,20 @@ class Targets {
     }
   }
   async save(ref, changes) {
+    return this.#write(ref, doc.edit(ref.snapshot, changes));
+  }
+
+  async applySelectionKey(ref, key) {
+    const {view, file, snapshot} = ref;
+    if (view.file !== file || !view.contentEl.isConnected) throw Error(stale);
+    const live = view.getMode() === 'source' && editorFor(view.contentEl)?.state.field(editorLivePreviewField, false);
+    if (key !== 'Delete' && (key !== 'Enter' || !live)) return;
+    const patch = key === 'Enter' ? doc.lineBelow(snapshot) : doc.removeEmbed(snapshot);
+    await this.#write(ref, patch, live);
+  }
+
+  async #write(ref, patch, focusEditor = false) {
     if (ref.file.path!==ref.path || this.app.vault.getAbstractFileByPath(ref.path)!==ref.file) throw Error(stale);
-    const patch=doc.edit(ref.snapshot,changes);
     if (ref.snapshot.text.slice(patch.from,patch.to)===patch.insert) return this.pendingSaves.get(ref.file);
     const editingView=this.#editingView(ref.file,ref.view);
     if (editingView) {
@@ -200,7 +212,16 @@ class Targets {
       // A previous write may have updated the editor before a disk save failed.
       // A retry of the same action may save that exact result without inserting it twice.
       if (current === ref.snapshot.text) {
-        editor.replaceRange(patch.insert,editor.offsetToPos(patch.from),editor.offsetToPos(patch.to));
+        const change = {from: editor.offsetToPos(patch.from), to: editor.offsetToPos(patch.to), text: patch.insert};
+        if (focusEditor) {
+          const newline = patch.insert.lastIndexOf('\n');
+          const caret = newline < 0 ? change.from : {line: change.from.line + 1, ch: patch.insert.length - newline - 1};
+          if (this.app.workspace.activeLeaf !== editingView.leaf) this.app.workspace.setActiveLeaf(editingView.leaf, {focus: false});
+          editor.transaction({changes: [change], selection: {from: caret}});
+          editor.focus();
+        } else {
+          editor.replaceRange(change.text, change.from, change.to);
+        }
       } else if (current !== doc.apply(ref.snapshot.text,ref.snapshot,patch)) {
         throw Error('편집 중 노트가 변경됐습니다. 이미지를 다시 선택하세요.');
       }

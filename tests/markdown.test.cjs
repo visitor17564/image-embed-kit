@@ -48,3 +48,30 @@ test('Obsidian line/col works with astral Unicode and CRLF',()=>{
   const text='😀\r\n동일 ![[a.png]]',starts=m.lineStarts(text);
   assert.equal(m.offset(starts,{line:1,col:3}),text.indexOf('!'));
 });
+
+test('Delete removes only the selected embed and its owned visible or hidden caption', () => {
+  const raw = '![Map|120](map.png "First edition")';
+  for (const caption of ['\n\n*second* <!--iek-caption-->', ' <!--iek-caption-hidden:second-->']) {
+    const text = raw + ' and ' + raw + caption + '\n\n*handwritten caption*';
+    const ref = m.snapshot(text, text.lastIndexOf(raw), raw);
+    assert.equal(m.apply(text, ref, m.removeEmbed(ref)), raw + ' and \n\n*handwritten caption*');
+    assert.throws(() => m.apply('different ' + text, ref, m.removeEmbed(ref)), /노트가 변경/);
+  }
+});
+
+test('Enter adds one writing line without splitting inline text or detaching its caption', () => {
+  const raw = '![[photo.png]]';
+  for (const [line, following, expectedBreak] of [
+    [raw, '', '\n'],
+    ['before ' + raw + ' after', '\nnext', '\n'],
+    [raw + '\r\n\r\n*caption* <!--iek-caption-->', '\r\nnext', '\r\n'],
+    [raw + '\n\n<!--iek-caption-hidden:kept-->', '\n\nnext', '\n'],
+    ['> - ' + raw, '\n> next', '\n>   '],
+    ['12. ' + raw, '\nnext', '\n    ']
+  ]) {
+    const text = line + following, ref = m.snapshot(text, text.indexOf(raw), raw);
+    const patch = m.lineBelow(ref);
+    assert.equal(m.apply(text, ref, patch), line + expectedBreak + following);
+    assert.equal(patch.from + patch.insert.length, (line + expectedBreak).length);
+  }
+});

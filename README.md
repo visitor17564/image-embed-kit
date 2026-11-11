@@ -20,6 +20,8 @@ Embed a vault image in a note, for example `![[photo.png]]`. In **Reading view**
 - **Add a caption** in the same dialog and choose **저장** (Save). You can hide a caption and restore it later, or clear the text to remove it.
 - **Zoom** by double-clicking the image or using the expand button (확대보기). The viewer shows the original dimensions and offers zoom, 100%, and fit to screen. Press Esc or click the backdrop to close it.
 - **Edit the embed link** in Live Preview with the code button (이 블럭 수정). For keyboard access, use the command palette and choose **Image Embed Kit: 노트 이미지 선택** to find an image by file name, caption, or line number.
+- **Remove an image from the note** by clicking it once and pressing **Delete** in Reading view or Live Preview. This removes that embed and its plugin caption. The attachment and other embeds of the same file stay available.
+- **Write below an image** in Live Preview by clicking it and pressing **Enter**. The cursor moves to a new line below the image and its caption. For an inline image, the new line starts below the current line of text.
 
 ### Supported images
 

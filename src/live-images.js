@@ -40,14 +40,24 @@ function entryInRange(document, start, end) {
 }
 
 function widgetEntry(editor, range) {
-  // The two DOM boundaries of this replacement widget are the two ends of the
-  // actual embed, including when the same image occurs twice in one line.
+  // A standalone block widget can include its line break; that break belongs to the note.
+  const line = editor.state.doc.lineAt(range.from);
+  if (range.to > line.to + 1) return null;
+  const end = Math.min(range.to, line.to);
+  if (end <= range.from) return null;
   let node = syntaxTree(editor.state).resolveInner(range.from + 1, 1);
   while (node) {
     if (excludedSyntax.test(node.name)) return null;
     node = node.parent;
   }
-  return entryInRange(editor.state.doc, range.from, range.to);
+  const direct = entryInRange(editor.state.doc, range.from, end);
+  if (direct) return direct;
+
+  // Some Live Preview versions render the opening markup as a separate widget.
+  // Accept only the parsed embed that contains this widget's whole source range.
+  const entries = imageEntries(editor, line.from, line.to)
+    .filter(entry => entry.start <= range.from && end <= entry.end);
+  return entries.length === 1 ? entries[0] : null;
 }
 
 // Only asked for on an editor command or a click. Small interactions walk the

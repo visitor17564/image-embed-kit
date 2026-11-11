@@ -54,6 +54,9 @@ class Overlay {
   constructor(plugin,doc) {
     this.plugin=plugin;this.doc=doc;this.win=doc.defaultView;this.events=new this.win.AbortController();
     const layer=this.layer=element(doc.body,'div','iek-layer');layer.hidden=true;
+    layer.tabIndex = -1;
+    layer.setAttribute('role', 'group');
+    layer.setAttribute('aria-label', '선택한 이미지');
     this.outline=element(layer,'div','iek-outline');
     for(const [dir,title] of [['left','왼쪽 너비 조절'],['right','오른쪽 너비 조절']]) {
       const b=button(layer,title,null,()=>{},'iek-grip iek-'+dir);
@@ -77,6 +80,7 @@ class Overlay {
     const listen=(dest,type,fn,opts={})=>dest.addEventListener(type,fn,{...opts,signal:this.events.signal});
     listen(doc,'pointerover',e=>{
       if(this.drag || this.layer.contains(e.target)) {this.clearTimer();return;}
+      if (this.selection && this.doc.activeElement === layer) return;
       const host=e.target.closest?.('.image-embed');
       const img=this.match(e.target.tagName==='IMG'?e.target:host?.querySelector('img'));
       if(img){this.show(img,false);return;}
@@ -86,11 +90,11 @@ class Overlay {
       if(this.layer.contains(e.target)||this.drag)return;
       const img=this.match(e.target);
       if(!img || !normal(e) || e.button!==0){this.hide();return;}
-      this.show(img,true);stop(e);
+      this.select(img);stop(e);
     },{capture:true});
     listen(doc,'click',e=>{
       if(e.button===0 && normal(e) && this.match(e.target)){
-        stop(e);this.show(e.target,true);
+        stop(e);this.select(e.target);
       }
     },{capture:true});
     listen(doc,'dblclick',e=>{
@@ -101,10 +105,12 @@ class Overlay {
     listen(doc,'pointermove',e=>this.move(e),{capture:true});
     listen(doc,'pointerup',e=>this.end(e,false),{capture:true});
     listen(doc,'pointercancel',e=>this.end(e,true),{capture:true});
-    listen(doc,'keydown',e=>{if(e.key==='Escape' && !layer.hidden){stop(e);this.hide();}},{capture:true});
+    listen(doc,'keydown',e=>this.keydown(e),{capture:true});
+    listen(doc,'keyup',e=>{if (this.heldKey === e.key) this.heldKey = null;},{capture:true});
+    listen(layer,'focusout',e=>{if (this.selection && !layer.contains(e.relatedTarget)) this.hide();});
     listen(doc,'scroll',()=>this.schedule(),{capture:true,passive:true});
     listen(this.win,'resize',()=>this.schedule());
-    listen(this.win,'blur',()=>this.hide());
+    listen(this.win,'blur',()=>{this.heldKey = null;this.hide();});
     this.observer=new this.win.ResizeObserver(()=>this.schedule());
   }
   match(node) {
@@ -114,10 +120,37 @@ class Overlay {
   }
   clearTimer(){if(this.timer){this.win.clearTimeout(this.timer);this.timer=0;}}
   later(){this.clearTimer();this.timer=this.win.setTimeout(()=>{if(!this.pinned&&!this.layer.contains(this.doc.activeElement))this.hide();},180);}
+  select(img) {
+    this.show(img, true);
+    if (this.layer.hidden) return;
+    if (!this.selection) {
+      this.selection = this.plugin.targets.forImage(img).then(ref => ({ref}), error => ({error}));
+    }
+    this.layer.setAttribute('aria-keyshortcuts', this.blockEdit.hidden ? 'Delete' : 'Delete Enter');
+    this.layer.focus({preventScroll: true});
+  }
+  keydown(e) {
+    if (this.heldKey === e.key && e.repeat) { stop(e); return; }
+    if (e.key === 'Escape' && !this.layer.hidden) { stop(e); this.hide(); return; }
+    if (e.target !== this.layer || this.doc.activeElement !== this.layer || !this.selection || this.drag ||
+        !normal(e) || e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;
+    if (e.key !== 'Delete' && (e.key !== 'Enter' || this.blockEdit.hidden)) return;
+    stop(e);
+    if (e.repeat) return;
+    this.heldKey = e.key;
+    const pending = this.selection;
+    const key = e.key;
+    this.hide();
+    this.plugin.perform(async () => {
+      const {ref, error} = await pending;
+      if (error) throw error;
+      if (this.plugin.alive) await this.plugin.targets.applySelectionKey(ref, key);
+    });
+  }
   show(img,pin){
     this.clearTimer();
     if(this.img!==img) {
-      this.pinned=false;this.observer.disconnect();this.img=img;this.observer.observe(img);
+      this.selection=null;this.pinned=false;this.observer.disconnect();this.img=img;this.observer.observe(img);
     }
     const live=!!img.closest('.markdown-source-view.is-live-preview');
     this.blockEdit.hidden=!live;
@@ -188,7 +221,7 @@ class Overlay {
     else this.plugin.perform(() => this.plugin.targets.editBlock(img));
   }
   hide(){
-    this.clearTimer();this.release();this.pinned=false;this.img=null;this.observer?.disconnect();
+    this.clearTimer();this.release();this.selection=null;this.pinned=false;this.img=null;this.observer?.disconnect();
     this.layer.hidden=true;
   }
   destroy(){

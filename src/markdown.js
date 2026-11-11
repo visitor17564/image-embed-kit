@@ -96,4 +96,23 @@ function apply(text, s, change) {
   if (text!==s.text) throw Error('편집 중 노트가 변경됐습니다. 이미지를 다시 선택하세요.');
   return text.slice(0,change.from)+change.insert+text.slice(change.to);
 }
-module.exports={parse,withWidth,snapshot,edit,apply,lineStarts,offset,minWidth,maxWidth,maxCaption};
+
+function removeEmbed(s) {
+  return {from: s.start, to: s.end + s.caption.raw.length, insert: ''};
+}
+
+function lineBelow(s) {
+  const end = s.end + s.caption.raw.length;
+  const lf = s.text.indexOf('\n', end);
+  let at = lf < 0 ? s.text.length : lf;
+  if (lf >= 0 && s.text[lf - 1] === '\r') at--;
+  const line = s.text.slice(s.text.lastIndexOf('\n', at - 1) + 1, at);
+  // Continue inside a quote or list without creating a second list item.
+  const prefix = /^[ \t]*(?:>[ \t]*)*/.exec(line)[0];
+  const marker = /^(?:[-+*]|\d{1,9}[.)])[ \t]+/.exec(line.slice(prefix.length));
+  const indent = prefix + (marker ? marker[0].replace(/[^ \t]/g, ' ') : '');
+  const eol = lf < 0 ? (s.text.match(/\r?\n/)?.[0] ?? '\n') : s.text.slice(at, lf + 1);
+  return {from: at, to: at, insert: eol + indent};
+}
+
+module.exports={parse,withWidth,snapshot,edit,apply,removeEmbed,lineBelow,lineStarts,offset,minWidth,maxWidth,maxCaption};
